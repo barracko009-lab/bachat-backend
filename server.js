@@ -1,49 +1,61 @@
 const express = require('express');
+const cors = require('cors');
 const axios = require('axios');
+require('dotenv').config();
+
 const app = express();
+
+app.use(cors());
 app.use(express.json());
 
-const KEY = process.env.CONSUMER_KEY;
-const SECRET = process.env.CONSUMER_SECRET;
-const PASSKEY = process.env.PASSKEY;
-const SHORTCODE = "1440458";
+app.get('/', (req, res) => {
+  res.send('Bachat Backend Live');
+});
 
-function timestamp(){
-  const d = new Date();
-  const p = (n)=> String(n).padStart(2,'0');
-  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+async function getToken() {
+  const auth = Buffer.from(`${process.env.CONSUMER_KEY}:${process.env.CONSUMER_SECRET}`).toString('base64');
+  const res = await axios.get('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
+    headers: { Authorization: `Basic ${auth}` }
+  });
+  return res.data.access_token;
 }
 
-app.post('/stk', async (req,res)=>{
-  try{
-    const {phone, amount} = req.body;
-    let clean = phone.replace(/^0/,'254').replace(/[^0-9]/g,'');
-    const auth = Buffer.from(`${KEY}:${SECRET}`).toString('base64');
-    const t = await axios.get('https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials',{headers:{Authorization:`Basic ${auth}`}});
-    const token = t.data.access_token;
-    const ts = timestamp();
-    const password = Buffer.from(`${SHORTCODE}${PASSKEY}${ts}`).toString('base64');
-    const r = await axios.post('https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest',{
-      BusinessShortCode: SHORTCODE,
-      Password: password,
-      Timestamp: ts,
-      TransactionType: "CustomerPayBillOnline",
-      Amount: amount,
-      PartyA: clean,
-      PartyB: SHORTCODE,
-      PhoneNumber: clean,
-      CallBackURL: "https://bachat-backend.onrender.com/callback",
-      AccountReference: "BACHAT",
-      TransactionDesc: "Bachat Deposit"
-    },{headers:{Authorization:`Bearer ${token}`}});
-    res.json(r.data);
-  }catch(e){ res.json({error: e.response?.data || e.message}); }
+app.post('/stkpush', async (req, res) => {
+  try {
+    const { phone, amount } = req.body;
+    console.log('STK Request:', phone, amount);
+    const token = await getToken();
+    const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+    const password = Buffer.from(`${process.env.SHORTCODE}${process.env.PASSKEY}${timestamp}`).toString('base64');
+    const response = await axios.post(
+      'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest',
+      {
+        BusinessShortCode: process.env.SHORTCODE,
+        Password: password,
+        Timestamp: timestamp,
+        TransactionType: 'CustomerPayBillOnline',
+        Amount: amount,
+        PartyA: phone,
+        PartyB: process.env.SHORTCODE,
+        PhoneNumber: phone,
+        CallBackURL: process.env.CALLBACK_URL || 'https://bachat-backend-phvx.onrender.com/callback',
+        AccountReference: 'BACHAT',
+        TransactionDesc: 'Bachat Deposit'
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    console.log('Daraja Response:', response.data);
+    res.json(response.data);
+  } catch (e) {
+    console.log('STK Error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data || e.message });
+  }
 });
 
-app.post('/callback', (req,res)=>{
-  console.log("CALLBACK", JSON.stringify(req.body));
-  res.json({ok:true});
+app.post('/callback', (req, res) => {
+  console.log('CALLBACK:', JSON.stringify(req.body));
+  res.json({ ResultCode: 0, ResultDesc: 'Accepted' });
 });
 
-app.get('/',(req,res)=>res.send('Bachat Backend Live'));
-app.listen(process.env.PORT||3000);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log('Running on ' + PORT));
