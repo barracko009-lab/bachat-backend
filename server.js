@@ -9,20 +9,21 @@ app.use(express.json());
 
 const CONSUMER_KEY = process.env.CONSUMER_KEY;
 const CONSUMER_SECRET = process.env.CONSUMER_SECRET;
-const SHORTCODE = process.env.SHORTCODE; // 1440458
+const SHORTCODE = process.env.SHORTCODE; // 1440458 - STORE NUMBER
+const TILL_NUMBER = process.env.TILL_NUMBER || '1918092'; // 1918092 - TILL NUMBER
 const PASSKEY = process.env.PASSKEY;
 const CALLBACK_URL = process.env.CALLBACK_URL;
 
-// === PRODUCTION URLs - DO NOT CHANGE TO SANDBOX ===
+// === PRODUCTION URLs ===
 const OAUTH_URL = 'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
 const STK_URL = 'https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest';
 
 app.get('/', (req, res) => {
-  res.send('Bachat Backend LIVE - Production');
+  res.send('Bachat Backend LIVE - Production - Till');
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', shortcode: SHORTCODE });
+  res.json({ status: 'ok', store: SHORTCODE, till: TILL_NUMBER });
 });
 
 // Get Access Token
@@ -34,7 +35,7 @@ async function getToken() {
   return res.data.access_token;
 }
 
-// STK Push
+// STK Push - FOR TILL
 app.post('/stkpush', async (req, res) => {
   try {
     let { phone, amount } = req.body;
@@ -56,16 +57,17 @@ app.post('/stkpush', async (req, res) => {
       String(date.getMinutes()).padStart(2, '0') +
       String(date.getSeconds()).padStart(2, '0');
 
+    // Password uses STORE NUMBER (1440458) + PASSKEY
     const password = Buffer.from(SHORTCODE + PASSKEY + timestamp).toString('base64');
 
     const payload = {
-      BusinessShortCode: SHORTCODE,
+      BusinessShortCode: SHORTCODE, // 1440458 - Store
       Password: password,
       Timestamp: timestamp,
-      TransactionType: 'CustomerPayBillOnline', // <-- IF 1440458 IS A TILL, CHANGE THIS TO 'CustomerBuyGoodsOnline'
+      TransactionType: 'CustomerBuyGoodsOnline', // TILL
       Amount: amount,
       PartyA: phone,
-      PartyB: SHORTCODE,
+      PartyB: TILL_NUMBER, // 1918092 - Till
       PhoneNumber: phone,
       CallBackURL: CALLBACK_URL,
       AccountReference: 'Bachat',
